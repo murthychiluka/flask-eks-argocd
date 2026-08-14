@@ -4,7 +4,8 @@ on:
   push:
     branches:
       - main
-
+permissions:
+  contents: write
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: a1
