@@ -1,0 +1,117 @@
+name: Flask CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: a1
+
+jobs:
+
+  build-and-deploy:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+    # -------------------------
+    # 1. Checkout
+    # -------------------------
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+
+    # -------------------------
+    # 2. Setup Python
+    # -------------------------
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+
+    # -------------------------
+    # 3. Install dependencies
+    # -------------------------
+    - name: Install Dependencies
+      run: |
+        pip install -r app/requirements.txt
+
+
+    # -------------------------
+    # 4. Configure AWS
+    # -------------------------
+    - name: Configure AWS
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+
+    # -------------------------
+    # 5. Login to ECR
+    # -------------------------
+    - name: Login to ECR
+      id: ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+
+    # -------------------------
+    # 6. Build Docker image
+    # -------------------------
+    - name: Build Docker Image
+      env:
+        REGISTRY: ${{ steps.ecr.outputs.registry }}
+      run: |
+        docker build \
+          -t $REGISTRY/$ECR_REPOSITORY:${{ github.sha }} \
+          -t $REGISTRY/$ECR_REPOSITORY:latest \
+          .
+
+
+    # -------------------------
+    # 7. Push Docker image
+    # -------------------------
+    - name: Push Docker Image
+      env:
+        REGISTRY: ${{ steps.ecr.outputs.registry }}
+      run: |
+        docker push $REGISTRY/$ECR_REPOSITORY:${{ github.sha }}
+        docker push $REGISTRY/$ECR_REPOSITORY:latest
+
+
+    # -------------------------
+    # 8. Update Kubernetes YAML
+    # -------------------------
+    - name: Update Image in Kubernetes
+      env:
+        REGISTRY: ${{ steps.ecr.outputs.registry }}
+      run: |
+        sed -i \
+        "s|^[[:space:]]*image:.*|        image: $REGISTRY/$ECR_REPOSITORY:${{ github.sha }}|" \
+        k8s/deployment.yaml
+
+        echo "Updated image:"
+        grep "image:" k8s/deployment.yaml
+
+
+    # -------------------------
+    # 9. Commit YAML
+    # -------------------------
+    - name: Commit Manifest
+      run: |
+        git config user.name "github-actions"
+        git config user.email "github-actions@github.com"
+
+        git add k8s/deployment.yaml
+
+        if git diff --cached --quiet; then
+          echo "No changes"
+        else
+          git commit -m "Update image to ${{ github.sha }} [skip ci]"
+          git push
+        fi
