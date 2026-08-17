@@ -233,3 +233,11 @@ If you have multiple commands:
     pip --version
     pip install -r app/requirements.txt
 ```
+kubectl patch svc argocd-server -n argocd \
+  -p '{"spec":{"type":"NodePort"}}'
+```text
+in order to access the UI of ArgoCD, you need to run the below command
+kubectl edit svc argocd-server -n argocd  #enable Node Port or
+kubectl patch svc argocd-server -n argocd \
+  -p '{"spec":{"type":"NodePort"}}'
+```
